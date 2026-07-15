@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.so
+
+# Envs
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local
+*.log
+.coverage
+htmlcov/
+BUILD_LOG.md
+benchmarks/
+src/parsica_spirit/engine/data/*.json
+*.local.*

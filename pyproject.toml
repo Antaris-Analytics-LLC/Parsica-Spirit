@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "parsica-spirit"
+version = "1.0.0"
+description = "Persistent, audit-friendly memory for Claude Code with deterministic base-tier retrieval. One install, one package: the markdown/JSONL base tier with its mandatory scrub gate, plus the accumulating memory engine. Zero runtime dependencies. Local-first."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Antaris Analytics", email = "Parsica@antarisanalytics.ai" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Antaris-Analytics-LLC/parsica-spirit"
+Repository = "https://github.com/Antaris-Analytics-LLC/parsica-spirit"
+Issues = "https://github.com/Antaris-Analytics-LLC/parsica-spirit/issues"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/parsica_spirit"]

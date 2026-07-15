@@ -1,0 +1,54 @@
+# Import-direction contracts for the one-package layout. Three zones inside parsica_spirit:
+#   enrich/  - the contracts leaf (records, ports, storage seam, scrub): imports NOTHING else
+#   engine/  - the memory engine: imports only the leaf (and itself)
+#   facade   - every top-level module (context, backends, router, ...): imports only the leaf;
+#              the engine backend is INJECTED at runtime, never imported by the facade
+#
+# The facade module lists below are enumerated because import-linter needs names; the
+# enumeration is kept honest by tests/test_seam_guards.py, which DISCOVERS the facade
+# module set from the source tree and fails if this file is missing any of it (so a new
+# module can never dodge the contract by being new). The package __init__ itself is
+# outside import-linter's reach here and is covered by the same discovery-based test.
+[importlinter]
+root_packages =
+    parsica_spirit
+
+[importlinter:contract:leaf-is-pure]
+name = the contracts leaf imports nothing else in the package
+type = forbidden
+source_modules =
+    parsica_spirit.enrich
+forbidden_modules =
+    parsica_spirit.engine
+    parsica_spirit.backends
+    parsica_spirit.claude_memory
+    parsica_spirit.conformance
+    parsica_spirit.context
+    parsica_spirit.continuity
+    parsica_spirit.identity
+    parsica_spirit.ports
+    parsica_spirit.promote
+    parsica_spirit.router
+    parsica_spirit.scrub
+    parsica_spirit.trace
+    parsica_spirit._lock
+
+[importlinter:contract:base-never-imports-engine]
+name = the base tier (facade + leaf) never imports the engine
+type = forbidden
+source_modules =
+    parsica_spirit.enrich
+    parsica_spirit.backends
+    parsica_spirit.claude_memory
+    parsica_spirit.conformance
+    parsica_spirit.context
+    parsica_spirit.continuity
+    parsica_spirit.identity
+    parsica_spirit.ports
+    parsica_spirit.promote
+    parsica_spirit.router
+    parsica_spirit.scrub
+    parsica_spirit.trace
+    parsica_spirit._lock
+forbidden_modules =
+    parsica_spirit.engine
