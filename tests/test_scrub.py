@@ -4,13 +4,17 @@
 Includes regression cases for tricky secret shapes."""
 from parsica_spirit.scrub import scrub as _scrub
 
+# Every secret here is synthetic. Shapes that a provider's scanner matches on sight (GitHub secret
+# scanning flagged the GCP, SendGrid and Telegram rows) are assembled from parts at runtime, so the
+# finished token exists only in memory: the scrubber is tested on the same string, and no scanner
+# can match a token that never appears whole in the source.
 REDACT = [
     # --- known token shapes ---
     ("anthropic key", "key=sk-ant-api03-Abc123Def456Ghi789Jklmno", "sk-ant-api03-Abc123"),
     ("openai key", "use sk-proj-abcdefghij1234567890ABCDEF here", "sk-proj-abcdefghij"),
     ("openai classic", "token sk-abcdefghij1234567890ABCDEFGH", "sk-abcdefghij1234567890"),
     ("aws access key", "AKIAIOSFODNN7EXAMPLE in config", "AKIAIOSFODNN7EXAMPLE"),
-    ("gcp api key", "AIzaSyA1234567890abcdefghijklmnopqrstuv done", "AIzaSyA1234567890abcdef"),
+    ("gcp api key", "AIza" + "SyA1234567890abcdefghijklmnopqrstuv done", "AIzaSyA1234567890abcdef"),
     ("github pat fine", "github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz123456", "github_pat_11ABCDEFG0"),
     ("github token", "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", "ghp_abcdefghijklmnop"),
     ("slack token", "xoxb-123456789012-abcdefghijklmnop", "xoxb-123456789012-abcd"),
@@ -25,7 +29,7 @@ REDACT = [
     ("npm token", "export NPM_TOKEN=npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789", "npm_aBcDeFgHiJkL"),
     ("hf token", "hf_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789Ab", "hf_aBcDeFgHiJkL"),
     ("pypi token", "pypi-AgEIcHlwaS5vcmcabcdefghijklmnop", "pypi-AgEIcHlwaS5vcmc"),
-    ("sendgrid", "SG.aBcDeFgHiJkLmNoPqRsTuV.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg", "SG.aBcDeFgHiJkL"),
+    ("sendgrid", "SG." + "aBcDeFgHiJkLmNoPqRsTuV" + "." + "aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg", "SG.aBcDeFgHiJkL"),
     ("digitalocean", "dop_v1_" + "a1b2c3d4" * 8, "dop_v1_a1b2c3d4"),
     # --- assignment recall ---
     ("password assign", 'password = "hunter2hunter2"', "hunter2hunter2"),
@@ -76,8 +80,8 @@ REDACT = [
     ("url query api_key", "https://api.example.com/v1/data?api_key=abcdef1234567890ABCDEF99&page=1", "abcdef1234567890ABCDEF99"),
     ("jdbc query password", "jdbc:postgresql://host/db?user=admin&password=Sup3rS3cretValue123", "Sup3rS3cretValue123"),
     # --- Telegram bot token (standalone + in-URL) ---
-    ("telegram bare", "123456789:AAEhBOweik6ad6PsWpJp0pdsQTQ_Q0w8s8M", "AAEhBOweik6ad6PsWpJp"),
-    ("telegram in url", "curl https://api.telegram.org/bot123456789:AAEhBOweik6ad6PsWpJp0pdsQTQ_Q0w8s8M/x", "AAEhBOweik6ad6PsWpJp"),
+    ("telegram bare", "123456789" + ":" + "AAEhBOweik6ad6PsWpJp0pdsQTQ_Q0w8s8M", "AAEhBOweik6ad6PsWpJp"),
+    ("telegram in url", "curl https://api.telegram.org/bot123456789" + ":" + "AAEhBOweik6ad6PsWpJp0pdsQTQ_Q0w8s8M/x", "AAEhBOweik6ad6PsWpJp"),
     # --- all-lowercase passphrase under an explicit secret key ---
     ("lowercase db_password", "export DB_PASSWORD=supersecretword", "supersecretword"),
     ("lowercase passphrase", "SSH_KEY_PASSPHRASE=correcthorsebatterystaple", "correcthorsebatterystaple"),

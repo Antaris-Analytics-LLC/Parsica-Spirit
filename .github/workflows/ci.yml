@@ -12,6 +12,12 @@ on:
   push:
   pull_request:
 
+# The release check only reads the checkout, so the job token needs nothing but read access to
+# the repository. Without this block the token inherits the repository default, which can be
+# read-write.
+permissions:
+  contents: read
+
 jobs:
   release-check:
     strategy:
