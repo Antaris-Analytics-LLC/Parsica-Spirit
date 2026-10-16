@@ -147,7 +147,7 @@ from .memory_types import (
 from .utils import atomic_write_json
 from .performance import ReadCache, WALManager, PerformanceMonitor, AccessTracker
 from .category_tagger import CategoryTagger
-from .session_tracker import SessionTracker
+from .session_tracker import SessionTracker, sid_tag
 
 # Module-level CategoryTagger singleton - shared across all ingest paths
 _ct = CategoryTagger()
@@ -1477,7 +1477,7 @@ class MemorySystem(NamespaceManager):
             logger.warning(
                 "%s mode: write blocked - session=%s is idle or unregistered "
                 "(op=%s). Call begin_turn() to activate the session.",
-                self._session_awareness.upper(), session_id, operation,
+                self._session_awareness.upper(), sid_tag(session_id), operation,
             )
         return allowed
 

@@ -135,10 +135,16 @@ class WALManager:
     def append(self, entry_dict: Dict) -> None:
         """Atomically append one entry dict as a durable JSON line."""
         line = json.dumps(entry_dict, ensure_ascii=False) + "\n"
+        newly = not os.path.exists(self.wal_path)
         with open(self.wal_path, "a", encoding="utf-8") as fh:
             fh.write(line)
             fh.flush()
             os.fsync(fh.fileno())
+        if newly:
+            try:
+                os.chmod(self.wal_path, 0o600)   # WAL content private to the owning user, like the shards (best-effort)
+            except OSError:
+                pass
         self._write_count += 1
 
     # -- read path (replay) -----------------------------------------------
