@@ -28,7 +28,8 @@ _LESSONS_BYTES = 4000
 _JOURNAL_BYTES = 3000
 _ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")   # \Z, not $, so a trailing newline can't sneak in
 _TRUNC_MARK = "...(earlier content truncated)\n"
-_COMMENT_BREAKOUT = re.compile(r"-->|<!--|[\r\n]")
+# "--!>" closes a comment too (HTML5 "incorrectly closed comment"), so it is a breakout as much as "-->".
+_COMMENT_BREAKOUT = re.compile(r"--!?>|<!--|[\r\n]")
 
 
 def _safe_comment(s: str) -> str:

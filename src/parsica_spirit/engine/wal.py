@@ -44,7 +44,13 @@ class WALWriter:
         # Ensure parent directory exists
         parent = os.path.dirname(os.path.abspath(path))
         os.makedirs(parent, exist_ok=True)
+        newly = not os.path.exists(path)
         self._fh = open(path, "a", encoding="utf-8")
+        if newly:
+            try:
+                os.chmod(path, 0o600)   # WAL content private to the owning user, like the shards (best-effort)
+            except OSError:
+                pass
 
     def append(self, entry_dict: dict) -> None:
         """Append one entry dict as a JSON line.

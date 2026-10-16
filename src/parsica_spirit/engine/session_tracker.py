@@ -21,12 +21,23 @@ what a session can recall is governed separately (cross_session_recall).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 logger = logging.getLogger("parsica_spirit.engine")
+
+
+def sid_tag(session_id: object) -> str:
+    """A short, non-reversible tag that stands in for a session id in log lines.
+
+    In CLOSED mode a registered session id is the write capability, and a warning line travels
+    further than the tracker does (a log file, a transcript, a chat mirror), so the id itself never
+    reaches one whole. Two log lines about the same session still carry the same tag."""
+    digest = hashlib.sha256(str(session_id).encode("utf-8", "replace")).hexdigest()[:10]
+    return "sid:" + digest
 
 # Safety net TTL - crash recovery ONLY. If this fires in normal operation,
 # it means the runtime has a bug (end_turn was never called).
@@ -160,7 +171,7 @@ class SessionTracker:
             logger.warning(
                 "end_turn(%s): turn_depth already 0 - ignoring "
                 "(possible mismatched begin_turn/end_turn)",
-                session_id,
+                sid_tag(session_id),
             )
             return
 
@@ -187,7 +198,7 @@ class SessionTracker:
             logger.warning(
                 "add_task(%s, %s): session not registered - ignoring. "
                 "Call begin_turn() first.",
-                session_id,
+                sid_tag(session_id),
                 task_name,
             )
             return False
@@ -195,7 +206,7 @@ class SessionTracker:
         if len(state.pending_tasks) >= self._max_pending_tasks:
             logger.warning(
                 "add_task(%s, %s): at limit (%d) - rejecting",
-                session_id,
+                sid_tag(session_id),
                 task_name,
                 self._max_pending_tasks,
             )
@@ -218,7 +229,7 @@ class SessionTracker:
         if state is None:
             logger.warning(
                 "complete_task(%s, %s): session not registered - ignoring",
-                session_id,
+                sid_tag(session_id),
                 task_name,
             )
             return
@@ -226,7 +237,7 @@ class SessionTracker:
         if task_name not in state.pending_tasks:
             logger.warning(
                 "complete_task(%s, %s): task not found in pending_tasks - ignoring",
-                session_id,
+                sid_tag(session_id),
                 task_name,
             )
             return
@@ -268,9 +279,8 @@ class SessionTracker:
             if session_id is not None:
                 logger.warning(
                     "CLOSED mode: write denied on cold start for session %s. "
-                    "Call begin_turn('%s') first.",
-                    session_id,
-                    session_id,
+                    "Call begin_turn() with that id first.",
+                    sid_tag(session_id),
                 )
             return self._mode != "closed"
 
@@ -288,14 +298,14 @@ class SessionTracker:
         if state is None:
             logger.warning(
                 "OPEN mode: unregistered session %s writing (allowed but logged)",
-                session_id,
+                sid_tag(session_id),
             )
             return True
 
         if state.status != "active":
             logger.warning(
                 "OPEN mode: idle session %s writing (allowed but logged)",
-                session_id,
+                sid_tag(session_id),
             )
 
         return True
@@ -316,9 +326,8 @@ class SessionTracker:
             # difference from OPEN mode - no fail-open bypass.
             logger.warning(
                 "CLOSED mode: write denied for unregistered session %s. "
-                "Call begin_turn('%s') first.",
-                session_id,
-                session_id,
+                "Call begin_turn() with that id first.",
+                sid_tag(session_id),
             )
             return False
 
@@ -327,7 +336,7 @@ class SessionTracker:
 
         logger.debug(
             "Write denied: session %s is idle (last_active=%.1f)",
-            session_id,
+            sid_tag(session_id),
             state.last_active,
         )
         return False
@@ -348,7 +357,7 @@ class SessionTracker:
         if state.turn_depth > 0 or state.pending_tasks:
             logger.info(
                 "force_idle(%s): clearing turn_depth=%d, %d pending tasks",
-                session_id,
+                sid_tag(session_id),
                 state.turn_depth,
                 len(state.pending_tasks),
             )
@@ -415,7 +424,7 @@ class SessionTracker:
         for sid in stale_ids:
             logger.info(
                 "cleanup_stale: removing session %s (idle for %.0fs)",
-                sid,
+                sid_tag(sid),
                 now - self._sessions[sid].last_active,
             )
             del self._sessions[sid]
@@ -459,7 +468,7 @@ class SessionTracker:
             logger.info(
                 "Session limit reached (%d): evicting idle session %s",
                 self._max_sessions,
-                sid,
+                sid_tag(sid),
             )
             del self._sessions[sid]
             evict_count -= 1
@@ -479,7 +488,7 @@ class SessionTracker:
             logger.warning(
                 "Session limit HARD CAP (%d): evicting ACTIVE session %s (DoS prevention)",
                 self._max_sessions,
-                sid,
+                sid_tag(sid),
             )
             del self._sessions[sid]
 
@@ -512,7 +521,7 @@ class SessionTracker:
                         "SAFETY NET: Session %s has been ACTIVE for %.0fs "
                         "without any activity. Forcing to IDLE. This indicates "
                         "a bug in the runtime - end_turn() was never called.",
-                        sid,
+                        sid_tag(sid),
                         elapsed,
                     )
                     state.status = "idle"
