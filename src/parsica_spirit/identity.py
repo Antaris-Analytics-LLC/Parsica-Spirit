@@ -290,17 +290,23 @@ def load_identity(root: str) -> Optional[Identity]:
 # workspace_fingerprint is a copied-folder SPEED-BUMP: it detects that the
 # resolved path changed, so a lazily-duplicated workspace does not silently act as the original. It is
 # deliberately NOT anti-theft against a determined actor who reconstructs the original absolute path.
-# Design stance: on any non-OK state we FAIL OPEN for usability (store / query /
-# continuity keep working) but LOUD for trust (the identity reads as absent + the SessionStart banner
-# shouts) - a working agent matters more to an everyday user than a matching identity, and we NEVER lock
-# them out. Classification is pure/side-effect-free (no write, no lock, no move) so it is run-twice-
-# identical and safe on a read-only or shared mount; the ONLY mutation is an explicit re-scope/quarantine.
+# Design stance: the identity GATE fails CLOSED. Only an identity whose stored fingerprint matches
+# this workspace is usable; on any other state the identity reads as absent, nothing signs with it,
+# and promotion is blocked. An identity file with NO fingerprint (LEGACY, from before workspace
+# binding) is not usable either: a copy with that one field blanked is indistinguishable from it,
+# so it is bound fresh through rescope_after_move before it counts. (Until October 2026 LEGACY
+# was usable, which let a blanked copy through copy detection and the promotion gate;
+# REVIEW-2026-10.md, pile one, class (a), identity.py 293-295 and 343-344.) What stays open is
+# availability, not the gate: store / query / continuity keep working on any state, and the
+# SessionStart banner says loudly which state it is. Classification is pure/side-effect-free (no
+# write, no lock, no move) so it is run-twice-identical and safe on a read-only or shared mount;
+# the ONLY mutation is an explicit re-scope/quarantine.
 
 class IdentityStatus:
     """How the on-disk identity relates to THIS workspace. Plain str constants (JSON/log friendly)."""
     ABSENT = "absent"       # no identity.json
     OK = "ok"               # loads AND its fingerprint matches this workspace
-    LEGACY = "legacy"       # loads + valid but has no stored fingerprint (pre-fingerprint) - usable, NOT a copy
+    LEGACY = "legacy"       # loads + valid but has no stored fingerprint (pre-binding): NOT usable until re-scoped
     MISMATCH = "mismatch"   # loads but the fingerprint differs - copied / moved workspace
     CORRUPT = "corrupt"     # present, non-empty, unreadable
     EMPTY = "empty"         # zero-byte crash leftover (scope_identity repairs this)
@@ -318,8 +324,10 @@ class IdentityView:
 
     @property
     def usable(self) -> bool:
-        """OK and LEGACY are authoritative for THIS workspace; MISMATCH/CORRUPT/ABSENT/EMPTY are not."""
-        return self.status in (IdentityStatus.OK, IdentityStatus.LEGACY)
+        """Only OK is authoritative for THIS workspace. LEGACY (no fingerprint) cannot be told from a
+        copy with the field blanked, so it is not usable until rescope_after_move binds a fresh
+        identity; MISMATCH/CORRUPT/ABSENT/EMPTY are not usable either."""
+        return self.status == IdentityStatus.OK
 
 
 def load_identity_status(root: str) -> IdentityView:
@@ -340,8 +348,8 @@ def load_identity_status(root: str) -> IdentityView:
     if ident is None:
         return IdentityView(IdentityStatus.CORRUPT, None, recomputed, "")
     stored = ident.workspace_fingerprint
-    if not stored:                                    # pre-fingerprint schema - valid but old, NOT a copy
-        return IdentityView(IdentityStatus.LEGACY, ident, recomputed, "")
+    if not stored:                                    # pre-binding schema, or a copy with the field blanked:
+        return IdentityView(IdentityStatus.LEGACY, ident, recomputed, "")   # classified, never usable
     if stored == recomputed:
         return IdentityView(IdentityStatus.OK, ident, recomputed, stored)
     return IdentityView(IdentityStatus.MISMATCH, ident, recomputed, stored)
@@ -361,12 +369,15 @@ def render_identity_banner(root: str, *, scrub_pii: bool = True) -> str:
         return ""
     if view.usable and view.identity is not None:
         name = view.identity.display_name or "(unnamed)"
-        legacy = "" if view.status == IdentityStatus.OK else "  (legacy - re-scope to bind it to this workspace)"
-        line = "%s %s (%s...) - bound to this workspace.%s" % (
-            _BANNER_SENTINEL, name, view.identity.identity_id[:12], legacy)
+        line = "%s %s (%s...) - bound to this workspace." % (
+            _BANNER_SENTINEL, name, view.identity.identity_id[:12])
     elif view.status == IdentityStatus.MISMATCH:
         line = ("%s NONE - this workspace does not match its identity (copied or moved). Acting WITHOUT an "
                 "identity; provenance shows none until you re-scope locally." % _BANNER_SENTINEL)
+    elif view.status == IdentityStatus.LEGACY:
+        line = ("%s NONE - the identity file carries no workspace fingerprint, so it cannot be told from a "
+                "copy. Acting WITHOUT an identity; re-scope to bind a fresh identity to this workspace."
+                % _BANNER_SENTINEL)
     else:  # CORRUPT
         line = ("%s NONE - the identity file is unreadable. Acting WITHOUT an identity; quarantine it and "
                 "re-scope to restore a trusted identity." % _BANNER_SENTINEL)
@@ -414,9 +425,10 @@ def render_byline_directive(root: str, *, session_tag: str = "", scrub_pii: bool
     Same purity contract as render_identity_banner: a pure function of on-disk state plus the
     caller-supplied tag (no clock, no randomness - the host owns the live session id; this module
     never invents one), so it survives compaction and re-injection byte-identically. It only speaks
-    for a USABLE identity: an absent/unset workspace is never nagged, and a copied, moved, or corrupt
-    workspace gets '' - signing is a privilege of an identity actually bound to this workspace (the
-    banner stays the loud channel for those states). Scrub-gated like the banner."""
+    for a USABLE identity: an absent/unset workspace is never nagged, and a copied, moved, corrupt
+    or unbound (no fingerprint) workspace gets '' - signing is a privilege of an identity actually
+    bound to this workspace (the banner stays the loud channel for those states). Scrub-gated like
+    the banner."""
     view = load_identity_status(root)
     if not view.usable or view.identity is None:
         return ""
@@ -435,16 +447,18 @@ _QUARANTINE_DIR = ".identity_quarantine"
 
 
 def quarantine_identity(root: str) -> Optional[str]:
-    """Move a MISMATCH/CORRUPT identity.json ASIDE - NEVER delete (provenance is kept) - into
+    """Move a MISMATCH/CORRUPT/LEGACY identity.json ASIDE - NEVER delete (provenance is kept) - into
     <root>/.identity_quarantine/, leaving the workspace identity-ABSENT so an ordinary scope_identity can
-    mint fresh. Idempotent: a no-op returning None when the identity is OK/LEGACY/ABSENT/EMPTY. Runs under
-    the SAME advisory lock scope_identity uses, so it can't race a concurrent mint. Returns the sidecar path."""
+    mint fresh. LEGACY (no fingerprint) is quarantined too since October 2026: it is not usable, and this
+    is its recovery path. Idempotent: a no-op returning None when the identity is OK/ABSENT/EMPTY. Runs
+    under the SAME advisory lock scope_identity uses, so it can't race a concurrent mint. Returns the
+    sidecar path."""
     with _REPAIR_LOCK:
         lfd = os.open(_path(root) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
         try:
             _lock_exclusive(lfd)
             view = load_identity_status(root)
-            if view.status not in (IdentityStatus.MISMATCH, IdentityStatus.CORRUPT):
+            if view.status not in (IdentityStatus.MISMATCH, IdentityStatus.CORRUPT, IdentityStatus.LEGACY):
                 return None
             # The WHOLE move-aside (mkdir + unique sidecar + the contended replace) is all-or-nothing from
             # the caller's view. Its SOURCE is the live identity.json, which the lock-free readers
@@ -459,7 +473,8 @@ def quarantine_identity(root: str) -> Optional[str]:
             try:
                 qdir = os.path.join(root, _QUARANTINE_DIR)
                 os.makedirs(qdir, exist_ok=True)
-                reason = "mismatch" if view.status == IdentityStatus.MISMATCH else "corrupt"
+                reason = {IdentityStatus.MISMATCH: "mismatch",
+                          IdentityStatus.LEGACY: "legacy"}.get(view.status, "corrupt")
                 fd, sidecar = tempfile.mkstemp(dir=qdir, prefix="identity.%s." % reason, suffix=".json")
                 os.close(fd)                                 # unique, non-clobbering sidecar name
                 _replace_with_retry(_path(root), sidecar, attempts=80, delay=0.005, max_delay=0.025)
@@ -484,11 +499,12 @@ def quarantine_identity(root: str) -> Optional[str]:
 
 def rescope_after_move(root: str, *, display_name: str, provenance: str = "self",
                        scrub_pii: bool = True) -> Identity:
-    """Resolve a copied/moved (MISMATCH) or unreadable (CORRUPT) workspace LOCALLY: quarantine the old
-    identity aside (kept, never deleted) and mint a BRAND-NEW identity_id bound to THIS workspace. The old
-    id NEVER carries across the fingerprint boundary - the non-exportable veto made operational: a
-    duplicated folder can't BECOME the original, it can only start its own local identity. Refuses when the
-    workspace already has a usable (OK/LEGACY) identity; an ABSENT/EMPTY workspace just mints."""
+    """Resolve a copied/moved (MISMATCH), unreadable (CORRUPT) or unbound (LEGACY, no fingerprint)
+    workspace LOCALLY: quarantine the old identity aside (kept, never deleted) and mint a BRAND-NEW
+    identity_id bound to THIS workspace. The old id NEVER carries across the fingerprint boundary - the
+    non-exportable veto made operational: a duplicated folder can't BECOME the original, it can only start
+    its own local identity. Refuses when the workspace already has a usable (OK) identity; an ABSENT/EMPTY
+    workspace just mints."""
     view = load_identity_status(root)
     if view.usable:
         raise IdentityError("this workspace already has a usable identity; nothing to re-scope")
@@ -514,7 +530,8 @@ def rename_identity(root: str, *, display_name: str, scrub_pii: bool = True) -> 
             view = load_identity_status(root)             # authoritative read UNDER the lock
             if not view.usable or view.identity is None:
                 raise IdentityError(
-                    "no usable identity to rename (workspace is absent, copied/moved, or corrupt)")
+                    "no usable identity to rename (workspace is absent, copied/moved, corrupt, or "
+                    "carries an unbound pre-fingerprint identity: re-scope first)")
             ident = view.identity
             renamed = Identity(
                 identity_id=ident.identity_id,   # preserved

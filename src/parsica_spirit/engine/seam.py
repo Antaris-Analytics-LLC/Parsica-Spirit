@@ -20,9 +20,15 @@ forget, input-gated ingest):
      (+ mark_dirty + read-cache invalidate) - the resync its forget() uses. The recycle bin
      carries the FULL record state (entry + labels + enrichment) so a forgotten id can be cleaned
      from the live side maps without losing what restore() needs.
-  3. store() constructs a MemoryEntry and appends directly, bypassing the engine's input-quality
-     gate - the seam persists unconditionally. A re-store of *forgotten* content starts CLEAN
-     (no tombstone resurrection); a re-store of *live* content is an upsert (last-writer-wins).
+  3. store() constructs a MemoryEntry and appends directly. It does NOT run the engine's
+     input-quality gate (the P0-P3 noise classifier) or the engine's session write gate: the seam
+     is the storage port behind the Context facade, whose own gates (the label gate, the
+     empty-after-scrub refusal) run before it, and the MemorySystem here is constructed with the
+     session gate off. What ALWAYS runs is the scrub gate (scrub_write), and it fails CLOSED: if
+     it raises, nothing is persisted. The engine's own load must also have succeeded before any
+     mutation: a store that cannot be read is never written (SeamEngineLoadError; see
+     _open_engine and _reload). A re-store of *forgotten* content starts CLEAN (no tombstone
+     resurrection); a re-store of *live* content is an upsert (last-writer-wins).
   4. DURABILITY: the engine persists its entries via its own save/load; the seam persists its
      side maps (labels, exact enrichments, recycle bin) in a sidecar (.parsica_seam.json) with
      write-through on every mutation and load on init, so a reopened backend sees everything.
@@ -70,6 +76,14 @@ class SeamSidecarError(RuntimeError):
     fresh workspace; a broken one means repair before mutating."""
 
 
+class SeamEngineLoadError(RuntimeError):
+    """The engine's own entries could not be loaded from disk, at open or on the reload that
+    precedes every mutation. The seam fails CLOSED the same way it does for the sidecar: a
+    mutation applied to an empty or stale snapshot and then saved would overwrite entries that
+    were never read. Until October 2026 both load failures were logged and the write went ahead
+    (REVIEW-2026-10.md, pile one, class (a), seam.py 97-100 and 273-274)."""
+
+
 class EngineBackend:
     #: seam-owned sidecar beside the engine store: labels + exact enrichments + recycle bin,
     #: keyed by record id. The engine persists entries; the seam persists what the seam owns.
@@ -87,21 +101,27 @@ class EngineBackend:
     @staticmethod
     def _open_engine(workspace, agent_name):
         """Construct + load the engine, retrying on a TRANSIENT Windows PermissionError: engine
-        construction reads several store files (namespace_manifest, indexes) with no lock, and a
-        concurrent process replacing one of them makes the read momentarily fail. load() itself is
-        non-fatal (a fresh workspace loads nothing)."""
+        construction and load read several store files (namespace_manifest, indexes, shards) with
+        no lock, and a concurrent process replacing one of them makes the read momentarily fail.
+        Any other load failure is FINAL and fails CLOSED (SeamEngineLoadError): a store whose
+        entries cannot be read must never be opened for writing, because the first persist would
+        save the empty or partial in-memory state over them. A fresh workspace loads zero entries
+        and is not a failure. (Until October 2026 a failed load was logged and the backend opened
+        on the in-memory state; REVIEW-2026-10.md, pile one, class (a), seam.py 97-100.)"""
         last = None
         for attempt in range(8):
             try:
                 mem = MemorySystem(workspace=workspace, agent_name=agent_name)
-                try:
-                    mem.load()                        # fresh workspace loads 0; an existing one loads all
-                except Exception:
-                    logger.warning("engine load failed; starting from the in-memory state", exc_info=True)
+                mem.load()                            # fresh workspace loads 0; an existing one loads all
                 return mem
             except PermissionError as e:
                 last = e
                 time.sleep(0.05 * (attempt + 1))
+            except Exception as exc:
+                raise SeamEngineLoadError(
+                    "engine store at %s could not be loaded (%s); refusing to open it for writing, "
+                    "because a mutation would persist over entries that were never read. Repair the "
+                    "store first." % (workspace, type(exc).__name__)) from exc
         raise last
 
     # --- durability ---
@@ -270,8 +290,15 @@ class EngineBackend:
             if rc is not None:
                 rc.invalidate()
             m.load()
-        except Exception:
-            logger.warning("engine reload failed; mutating the in-memory snapshot", exc_info=True)
+        except PermissionError:
+            raise                                     # transient Windows race: _locked retries the mutation
+        except Exception as exc:
+            # FINAL: never mutate a stale snapshot. The mutation does not run (and a read refresh
+            # raises instead of serving a snapshot of a store that cannot be loaded).
+            raise SeamEngineLoadError(
+                "engine reload before a mutation failed (%s); the mutation did not run, because "
+                "applying it to a stale snapshot and saving would overwrite other writers' records. "
+                "Repair the store first." % type(exc).__name__) from exc
         self._labels.clear()
         self._enr.clear()
         self._bin.clear()

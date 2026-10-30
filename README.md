@@ -187,7 +187,11 @@ flagged loudly rather than silently acting as the original: the identity reads a
 absent and the session banner shouts. Identity here is flexible, not cryptographic;
 an invalid identity (copied, moved, or corrupt workspace) flags loudly but never
 disables the agent, and a workspace that was never scoped is simply unset - the
-banner stays empty.
+banner stays empty. An identity file from before workspace binding, one with no
+fingerprint, is not usable either: it cannot be told from a copy with that field
+blanked, so it does not sign and does not pass the promotion gate until
+`rescope_after_move` binds a fresh identity to the workspace (the old file is kept
+aside in `.identity_quarantine/`).
 
 The **byline** is the identity's visible face: a one-line signature the agent opens
 every response with, carrying the name this workspace gave it (plus the host-supplied
@@ -211,9 +215,10 @@ ctx.identity_view                 # read-only full classification for the audit 
                                   # status plus fingerprints, including a quarantined record
 ctx.quarantine_identity()         # explicitly move an invalid identity aside (kept, never
                                   # deleted; a no-op returning None while identity is valid)
-ctx.rescope_after_move("ExampleAgent")    # the recovery path after a legitimate move: the old
-                                  # identity is quarantined aside, a fresh one is minted
-                                  # bound to this workspace, and the operation is audited
+ctx.rescope_after_move("ExampleAgent")    # the recovery path after a legitimate move, and for
+                                  # an identity with no fingerprint: the old identity is
+                                  # quarantined aside, a fresh one is minted bound to this
+                                  # workspace, and the operation is audited
 ```
 
 ### Forgetting, deliberately
