@@ -52,46 +52,46 @@ def test_plain_ascii_gate_fails_on_empty_discovery(monkeypatch):
 
 _STUB_GATES = [
     ("tests", lambda: (True, "stub"), False),
-    ("closure-armed", lambda: (False, "sidecar absent - would be RED"), False),
+    ("unarmed", lambda: (False, "input absent - would be RED"), False),
     ("licensing", lambda: (True, "stub"), False),
 ]
 
 
-def test_the_old_skip_flag_no_longer_skips_the_closure_gate(monkeypatch, capsys):
-    # Until October 2026 --skip-closure-armed turned a missing gate input into a printed SKIP and
-    # an exit code of 0, and CI always passed it (REVIEW-2026-10.md, pile one, class (e)). The
-    # flag is gone: an old invocation runs every gate, and an unarmed closure gate is RED.
+def test_an_unknown_flag_skips_nothing(monkeypatch, capsys):
+    # --skip-slow is the only flag the verifier knows. Every other flag is ignored, so no
+    # invocation can turn a failing gate into a printed SKIP and an exit code of 0; until October
+    # 2026 one flag did exactly that, and CI always passed it (REVIEW-2026-10.md, pile one, class
+    # (e)).
     monkeypatch.setattr(vr, "GATES", _STUB_GATES)
-    monkeypatch.setattr(vr.sys, "argv", ["verify_release.py", "--skip-closure-armed"])
+    monkeypatch.setattr(vr.sys, "argv", ["verify_release.py", "--skip-unarmed", "--skip-closure-armed"])
     rc = vr.main()
     out = capsys.readouterr().out
     assert rc == 1
     assert "SKIP" not in out
-    assert "FAIL   closure-armed" in out and "RED" in out
+    assert "FAIL   unarmed" in out and "RED" in out
     assert out.count("PASS") == 2                      # the other two gates still ran
 
 
-def test_closure_armed_fails_without_the_list_even_outside_a_git_checkout(monkeypatch, tmp_path):
-    # Until October 2026 a tree with no .git directory passed this gate with the list absent
-    # (verify_release.py 101-105). A gate with no input fails everywhere.
-    monkeypatch.setattr(vr, "ROOT", str(tmp_path))          # no .git, no sidecar
-    ok, detail = vr.gate_closure_armed()
-    assert ok is False and "absent" in detail and "fails" in detail
-    sidecar = tmp_path / "tests" / "engine" / "closure_excluded.local.txt"
-    sidecar.parent.mkdir(parents=True)
-    sidecar.write_text("# only a comment\n", encoding="utf-8")
-    ok, detail = vr.gate_closure_armed()
-    assert ok is False and "empty" in detail
-    sidecar.write_text("zz_some_private_module\n", encoding="utf-8")
-    ok, detail = vr.gate_closure_armed()
-    assert ok is True and "1 excluded" in detail and "zz_some_private_module" not in detail
-
-
-def test_closure_armed_runs_by_default(monkeypatch, capsys):
-    # the DEFAULT stays fail-closed: without the flag, an unarmed closure gate is RED.
+def test_every_gate_runs_by_default(monkeypatch, capsys):
+    # the DEFAULT stays fail-closed: a gate that reports its input missing is RED, never skipped.
     monkeypatch.setattr(vr, "GATES", _STUB_GATES)
     monkeypatch.setattr(vr.sys, "argv", ["verify_release.py"])
     rc = vr.main()
     out = capsys.readouterr().out
     assert rc == 1
-    assert "FAIL   closure-armed" in out and "RED" in out
+    assert "SKIP" not in out
+    assert "FAIL   unarmed" in out and "RED" in out
+
+
+def test_the_excluded_module_closure_gate_is_retired():
+    # The excluded-module closure gate was retired in October 2026 (REVIEW-2026-10.md, follow-up,
+    # class (e)): its two test modules are gone, the verifier has no arming gate and reads no
+    # sidecar list, and the remaining gates are exactly these five, every one of which runs.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for rel in ("tests/engine/test_closure.py", "tests/engine/test_closure_gate_fails_closed.py"):
+        assert not os.path.exists(os.path.join(root, rel)), "%s is back in the tree" % rel
+    assert [name for name, _, _ in vr.GATES] == ["tests", "import-closure", "plain-ascii-docs",
+                                                 "clean-room", "licensing"]
+    src = open(vr.__file__, encoding="utf-8").read()
+    assert "gate_closure_armed" not in src and "closure_excluded" not in src
+    assert "skip_closure" not in src

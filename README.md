@@ -96,9 +96,8 @@ facade  ---->  enrich  <----  engine
   hot/cold tiers, 11-layer BM25+ retrieval, the accumulating substrate, decay and
   reinforcement, temporal reasoning, confidence scoring, consolidation, selective
   forgetting. Reaches the facade only through the leaf contracts.
-- **scripts/verify_release.py**: the one-command release gate: tests, import
-  closure, closure arming (release-side), plain-ASCII docs, clean-room wheel build,
-  licensing.
+- **scripts/verify_release.py**: the one-command release gate: tests, import-linter
+  zone contracts, plain-ASCII docs, clean-room wheel build, licensing.
 
 ## Dependencies
 
@@ -553,16 +552,14 @@ Local-first and network-free is the baseline for the whole repository. On top of
 python scripts/verify_release.py
 ```
 
-One command runs the full gate: unit suites, import-closure (the base tier provably
-never touches the engine), the closure tests with their closure-armed check (the
-exclusion manifest, armed release-side), a plain-ASCII check on the shipped docs, a
-clean-room wheel build in a fresh venv, and license checks.
+One command runs the full gate: unit suites, the import-linter zone contracts (the base
+tier provably never touches the engine), a plain-ASCII check on the shipped docs, a
+clean-room wheel build in a fresh venv, and license checks. Every gate runs on every
+checkout; nothing skips, and a gate whose input is missing fails.
 
-On a checkout that lacks `tests/engine/closure_excluded.local.txt` (every public checkout
-today), the closure tests and the closure-armed gate fail by name: a gate whose input is
-missing fails rather than passes or skips (since October 2026; see `REVIEW-2026-10.md`).
-Committing the list or retiring the gate is the maintainer's open decision. See
-`PROVENANCE.md`.
+The excluded-module closure gate that once ran here, against a list of module names kept
+outside the repository, was retired in October 2026; `REVIEW-2026-10.md` records the
+reason and `PROVENANCE.md` describes what the clean-room check still proves.
 
 ## Connecting Claude Code's own memory
 
@@ -671,9 +668,9 @@ the files are yours, and so is their deletion.
 
 The offline layer calibrator, adaptive quality routing, multi-agent team memory,
 document-ingest parsers, the MCP server, cloud backends, and cross-format import stay
-upstream. The exclusion manifest is not in this repository; the closure tests
-(`test_closure.py`) fail on a checkout that lacks it until it is committed or the gate is
-retired. None of the excluded modules are present in this public tree.
+upstream. None of those modules are present in this public tree; the closure gate that
+once checked for them against a list kept outside the repository was retired in October
+2026 (`REVIEW-2026-10.md`).
 
 No data files ship at all. The substrate and every expansion index arrive empty
 on purpose: they accumulate **your** corpus.
