@@ -125,7 +125,7 @@ One install, one package - the engine and the contracts leaf are subpackages ins
 The base tier never imports the engine (CI-enforced); escalation is explicit, by injecting
 an engine backend (below), so you always know which tier you are running.
 
-Until the pile-one pull requests listed in REVIEW-2026-10.md merge, treat the scrub as best effort and keep sensitive material out.
+The scrub covers known credential shapes and four kinds of PII, and nothing screens stored text for instructions before it is re-injected. Keep sensitive material out of what Spirit stores; REVIEW-2026-10.md lists what remains.
 
 ## How to use it
 
