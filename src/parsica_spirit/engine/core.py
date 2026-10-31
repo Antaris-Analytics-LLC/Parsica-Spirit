@@ -3596,6 +3596,8 @@ class MemorySystem(NamespaceManager):
         # Bootstrap file size check - some agent runtimes inject workspace files into
         # context with a hard ~35,000 char limit. Files over this limit are silently
         # truncated, causing agents to lose memory context without any visible error.
+        bootstrap_warnings = None
+        bootstrap_error = None
         try:
             bootstrap_warnings = self.check_bootstrap_files()
             checks["bootstrap_files_ok"] = len(bootstrap_warnings) == 0
@@ -3603,19 +3605,20 @@ class MemorySystem(NamespaceManager):
                 import warnings
                 for w in bootstrap_warnings:
                     warnings.warn(w, RuntimeWarning, stacklevel=2)
-        except Exception:
-            checks["bootstrap_files_ok"] = True  # non-fatal if check fails
+        except Exception as exc:
+            # A check that could not run is NOT a pass. Until October 2026 this branch set the check
+            # to True (REVIEW-2026-10.md, pile one, class (a), core.py 3606-3607).
+            checks["bootstrap_files_ok"] = False
+            bootstrap_error = type(exc).__name__
 
         status = "ok" if all(checks.values()) else "degraded"
         result = {"status": status, "checks": checks}
 
-        # Surface bootstrap warnings in health report for easy visibility
-        try:
-            bw = self.check_bootstrap_files()
-            if bw:
-                result["bootstrap_warnings"] = bw
-        except Exception:
-            pass
+        # Surface bootstrap warnings (and a failed check) in the health report for easy visibility
+        if bootstrap_warnings:
+            result["bootstrap_warnings"] = bootstrap_warnings
+        if bootstrap_error:
+            result["bootstrap_check_error"] = bootstrap_error
 
         return result
 
@@ -3678,10 +3681,19 @@ class MemorySystem(NamespaceManager):
                             f"bootstrap limit (warn at {warn_threshold:,}). "
                             f"Consider pruning before it causes silent truncation. ({fpath})"
                         )
-                except OSError:
-                    pass
-        except Exception:
-            pass  # Never raise - this is a non-fatal diagnostic
+                except OSError as exc:
+                    # a file that cannot be inspected is reported, never silently counted as fine
+                    warnings_out.append(
+                        f"{fname} could not be inspected ({type(exc).__name__}); its size is unknown, "
+                        f"not OK. ({fpath})"
+                    )
+        except Exception as exc:
+            # Never raise - this is a diagnostic - but never report an unfinished scan as all clear
+            # either (until October 2026 this returned an empty list, which get_health read as OK).
+            warnings_out.append(
+                f"bootstrap file check could not complete ({type(exc).__name__}); treat the result "
+                f"as unknown, not OK."
+            )
 
         return warnings_out
 

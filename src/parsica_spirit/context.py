@@ -82,10 +82,11 @@ class Context:
 
     @property
     def identity(self) -> Optional[Identity]:
-        """This workspace's identity - ONLY when it is valid AND bound to THIS workspace (status OK or
-        LEGACY). On a copied/moved/corrupt workspace this is None (fail-closed): the base tier still works,
-        but provenance shows NO identity and the SessionStart banner says so loudly. Never raises, never
-        locks the agent out - a working agent matters more than a matching identity."""
+        """This workspace's identity - ONLY when it is valid AND bound to THIS workspace (status OK).
+        On a copied/moved/corrupt workspace, or one whose identity carries no fingerprint (LEGACY), this
+        is None (fail-closed): the base tier still works, but provenance shows NO identity and the
+        SessionStart banner says so loudly. Never raises, never locks the agent out of store and query -
+        it only withholds the identity until rescope_after_move binds one."""
         if not self._root:
             return None
         view = _load_identity_status(self._root)

@@ -670,10 +670,19 @@ def looks_clean(text):
 
 
 
+class ScrubGateError(RuntimeError):
+    """The seam scrub gate could not scrub what it was handed, so the write that called it does
+    not happen: a gate that cannot run is a refusal, never a pass-through. Until October 2026 an
+    enrichment that could not be rebuilt was returned unscrubbed, and label keys and non-string
+    label values were never scrubbed at all (REVIEW-2026-10.md, pile one, class (a), scrub.py
+    690-691 and 704-707)."""
+
+
 def _scrub_enrichment(enr, scrub_pii):
     """Return a copy of an enrichment record with its text fields (summary/tags/keywords/
     search_queries) scrubbed. Duck-typed via dataclasses.replace so the scrubber needs no hard
-    import of the record type; a non-dataclass or missing field is returned untouched."""
+    import of the record type. A record that cannot be rebuilt with its scrubbed fields (not a
+    dataclass, a missing field) RAISES ScrubGateError and the caller's write does not happen."""
     import dataclasses
     def _s(x):
         return scrub(x, scrub_pii=scrub_pii)[0] if isinstance(x, str) else x
@@ -687,25 +696,54 @@ def _scrub_enrichment(enr, scrub_pii):
             keywords=_st(getattr(enr, "keywords", ())),
             search_queries=_st(getattr(enr, "search_queries", ())),
         )
-    except Exception:
-        return enr
+    except Exception as exc:
+        raise ScrubGateError("enrichment of type %s could not be scrubbed (%s); the write did not "
+                             "happen" % (type(enr).__name__, type(exc).__name__)) from exc
+
+
+def _scrub_labels(labels, scrub_pii):
+    """Scrub every label KEY and VALUE, or refuse. Keys must be strings and are scrubbed like
+    values; string values are scrubbed; a bool or None passes; an int or float is scrubbed in its
+    text form and, if anything was redacted, the marker text lands in its place (a card or phone
+    number stored as a number is still a number on disk otherwise); any other value type (a list,
+    a dict, a set) is refused, because labels are scalar metadata and a container cannot be
+    scrubbed field by field here. Two keys that collide after scrubbing with different values are
+    refused rather than silently merged."""
+    cleaned = {}
+    for k, v in labels.items():
+        if not isinstance(k, str):
+            raise ScrubGateError("label key of type %s cannot be scrubbed; the write did not happen"
+                                 % type(k).__name__)
+        ck, _ = scrub(k, scrub_pii=scrub_pii)
+        if isinstance(v, str):
+            v, _ = scrub(v, scrub_pii=scrub_pii)
+        elif isinstance(v, bool) or v is None:
+            pass
+        elif isinstance(v, (int, float)):
+            sv, n = scrub(str(v), scrub_pii=scrub_pii)
+            if n:
+                v = sv
+        else:
+            raise ScrubGateError("label value of type %s cannot be scrubbed (labels are scalars); "
+                                 "the write did not happen" % type(v).__name__)
+        if ck in cleaned and cleaned[ck] != v:
+            raise ScrubGateError("two label keys collide after scrubbing with different values; "
+                                 "the write did not happen")
+        cleaned[ck] = v
+    return cleaned
 
 
 def scrub_write(content=None, labels=None, enrichment=None, *, scrub_pii=True):
-    """Seam-level write gate: redact secrets (and PII when scrub_pii) from content, string label
-    VALUES, AND the enrichment's text fields before storage. Every StoragePort write path
+    """Seam-level write gate: redact secrets (and PII when scrub_pii) from content, every label
+    KEY and VALUE, and the enrichment's text fields before storage. Every StoragePort write path
     (store/modify/move) crosses this, so nothing -- the engine API, the Context facade, or a raw
-    backend -- can land a secret/PII on disk. Idempotent: an already-scrubbed caller (the facade)
-    pays only a no-op re-scan. Returns (content, labels, enrichment)."""
+    backend -- can land a secret/PII on disk. Fails CLOSED: anything this gate cannot scrub raises
+    ScrubGateError and the write does not happen. Idempotent: an already-scrubbed caller (the
+    facade) pays only a no-op re-scan. Returns (content, labels, enrichment)."""
     if content is not None:
         content, _ = scrub(content, scrub_pii=scrub_pii)
     if labels:
-        cleaned = {}
-        for k, v in labels.items():
-            if isinstance(v, str):
-                v, _ = scrub(v, scrub_pii=scrub_pii)
-            cleaned[k] = v
-        labels = cleaned
+        labels = _scrub_labels(labels, scrub_pii)
     if enrichment is not None:
         enrichment = _scrub_enrichment(enrichment, scrub_pii)
     return content, labels, enrichment
