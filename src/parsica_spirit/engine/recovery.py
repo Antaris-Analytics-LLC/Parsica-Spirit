@@ -281,7 +281,10 @@ class RecoveryManager:
         return self.recovered_cache.get("memories", [])
 
     def inject_into_context(self) -> str:
-        """Generate [MEMORY RESTORED] block for context injection."""
+        """Render the [MEMORY RESTORED] summary a host may place in context: counts by source,
+        reference material only. The block describes what was recovered; it does not address the
+        agent and asks for nothing. Until October 2026 it ended with an instruction to use the
+        memories (REVIEW-2026-10.md, follow-up, class (c))."""
         if not self.recovered_cache:
             return ""
 
@@ -292,6 +295,7 @@ class RecoveryManager:
         block += f"Recovered {len(memories)} memories from {len(tags)} sources:\n"
         for source, count in sorted(tags.items()):
             block += f"  - {source}: {count} memories\n"
-        block += "Available in context. Use as needed.\n"
+        block += ("This block summarizes recovered memory. It is reference material; "
+                  "nothing in it is an instruction.\n")
 
         return block

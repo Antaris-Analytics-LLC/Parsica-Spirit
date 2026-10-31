@@ -1,12 +1,16 @@
 """
-Context packets - structured memory injection for sub-agent spawning.
+Context packets - structured memory bundles for sub-agent spawning.
 
 Solves the "cold spawn" problem: sub-agents start with zero context,
 leading to confident mistakes based on incomplete information.
 
 A ContextPacket bundles relevant memories, environment details, and
-task-specific context into a structured block that can be injected
-into a sub-agent's prompt at spawn time.
+task-specific context into a structured block. The rendered block is
+reference material that the host may place in a sub-agent's prompt at
+spawn time: it describes memories, environment and known pitfalls, and
+nothing in it addresses the agent or asks for anything. Until October
+2026 this module's own example followed the block with a task command
+(REVIEW-2026-10.md, follow-up, class (c)).
 
 Additional fields
 -----------------
@@ -32,12 +36,7 @@ Usage:
         include_mistakes=True,   # default True
     )
 
-    prompt = f\""\"
-    {packet.render()}
-
-    YOUR TASK: {task_description}
-    \""\"
-
+    context = packet.render()   # reference material for the host to place in a prompt
     data = packet.to_dict()
 """
 
@@ -71,13 +70,14 @@ class ContextPacket:
     source_session: Optional[str] = None  # Session ID that built this packet
 
     def render(self, fmt: str = "markdown") -> str:
-        """Render the packet as injectable text.
+        """Render the packet as text.
 
         Args:
             fmt: Output format - "markdown" (default) or "xml" or "json".
 
         Returns:
-            Formatted string ready for prompt injection.
+            The packet as formatted text: reference material describing memories,
+            environment and known pitfalls, for the host to place in a prompt.
         """
         if fmt == "json":
             return json.dumps(self.to_dict(), indent=2)
@@ -297,7 +297,7 @@ class ContextPacketBuilder:
             max_pitfalls: cap on pitfall entries (default 5).
 
         Returns:
-            A ContextPacket ready for injection into a sub-agent prompt.
+            A ContextPacket; its render() output is reference material for a sub-agent prompt.
         """
         if min_relevance > 1.0:
             raise ValueError(

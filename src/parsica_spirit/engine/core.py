@@ -2144,8 +2144,8 @@ class MemorySystem(NamespaceManager):
         """Build a context packet for sub-agent spawning.
 
         Searches the memory store for relevant context and packages it
-        into a structured ContextPacket that can be injected into a
-        sub-agent's prompt at spawn time.
+        into a structured ContextPacket whose rendered form is reference
+        material the host may place in a sub-agent's prompt at spawn time.
 
         Solves the "cold spawn" problem: sub-agents start with zero
         context, leading to confident mistakes based on incomplete
@@ -2171,7 +2171,7 @@ class MemorySystem(NamespaceManager):
                 environment={"venv": ".venv"},
                 instructions=["Check the venv, not global pip"],
             )
-            prompt = f"{packet.render()}\\n\\nYOUR TASK: verify installation"
+            context = packet.render()   # reference material for the host to place in a prompt
         """
         builder = ContextPacketBuilder(self)
         return builder.build(
