@@ -3,11 +3,10 @@ name: ci
 # Runs the release check (scripts/verify_release.py) on every push and PR, on Linux and Windows.
 # It does not publish anything.
 #
-# Every gate runs. Until October 2026 this step passed --skip-closure-armed, so the closure gate
-# (whose exclusion list is not in the repository) never ran here and the verifier's PARTIAL result
-# read as success (REVIEW-2026-10.md, pile one, class (e)). A gate whose input is missing fails;
-# this job is red until the exclusion list is committed or the gate is retired, and that red is
-# the honest state.
+# Every gate runs; nothing is skipped. Until October 2026 this step passed --skip-closure-armed,
+# so the excluded-module closure gate never ran here and the verifier's PARTIAL result read as
+# success (REVIEW-2026-10.md, pile one, class (e)). That gate was retired in the October 2026
+# follow-up, so every remaining gate runs on a plain public checkout and the verdict is real.
 
 on:
   push:

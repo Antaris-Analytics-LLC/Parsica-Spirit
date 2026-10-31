@@ -10,9 +10,6 @@ Gates:
                        onto the child PYTHONPATH, so a bare checkout needs nothing installed)
   - import-closure   - import-linter zone contracts (.importlinter); fails closed if the
                        required config or the tool is absent
-  - closure-armed    - the closure-test exclusion list must be present and non-empty, in every
-                       checkout and every artifact; a gate whose input is missing FAILS (there is
-                       no flag that turns that into a skip; one existed until October 2026)
   - plain-ascii-docs - shipped .md docs carry no AI-tell glyphs (em/en dash, ellipsis, curly quotes,
                        bullet, arrows, box-art, emoji); fails on an empty discovery, never certifies nothing
   - clean-room       - one wheel, inventory closed, zero declared dependencies, base lifecycle
@@ -20,7 +17,9 @@ Gates:
   - licensing        - Apache-2.0 LICENSE + NOTICE at the root, grant declared in pyproject
 
 Exit 0 iff every gate RUN passes. --skip-slow skips the slow gates while iterating and reports
-PARTIAL, never GREEN.
+PARTIAL, never GREEN. No other flag skips anything, and a gate whose input is missing fails. The
+excluded-module closure gate (closure-armed) that ran here until October 2026 was retired;
+REVIEW-2026-10.md records the reason.
 """
 
 import os
@@ -79,25 +78,6 @@ def gate_import_closure():
         if not ok:
             return False, " | ".join(details)
     return True, " | ".join(details)
-
-
-def gate_closure_armed():
-    """Fail closed if the import-closure exclusion gate would run without its input.
-
-    The exclusion list lives in tests/engine/closure_excluded.local.txt. A release, a checkout and
-    an unpacked artifact are judged the same way: the list is present and non-empty, or this gate
-    is RED. Until October 2026 a tree with no .git directory passed here with the list absent, and
-    a command-line flag turned the absence into a skip (REVIEW-2026-10.md, pile one, class (e),
-    scripts/verify_release.py 101-105 and 243-260). Reports the COUNT only - never a name."""
-    sidecar = os.path.join(ROOT, "tests", "engine", "closure_excluded.local.txt")
-    if os.path.exists(sidecar):
-        names = [ln.strip() for ln in open(sidecar, encoding="utf-8").read().splitlines()
-                 if ln.strip() and not ln.strip().startswith("#")]
-        if not names:
-            return False, "closure exclusion list is empty - the gate would scan nothing"
-        return True, "closure gate armed (%d excluded module(s); names withheld)" % len(names)
-    return False, ("closure exclusion list absent (tests/engine/closure_excluded.local.txt) - the gate "
-                   "cannot run, and a gate with no input fails; commit the list or retire the gate")
 
 
 def gate_cleanroom():
@@ -227,7 +207,6 @@ def gate_plain_ascii_docs():
 GATES = [
     ("tests", gate_tests, False),
     ("import-closure", gate_import_closure, False),
-    ("closure-armed", gate_closure_armed, False),
     ("plain-ascii-docs", gate_plain_ascii_docs, False),
     ("clean-room", gate_cleanroom, True),
     ("licensing", gate_licensing, False),
@@ -236,10 +215,8 @@ GATES = [
 
 def main():
     skip_slow = "--skip-slow" in sys.argv
-    # There is no flag that skips the closure-armed gate. Until October 2026 --skip-closure-armed
-    # did, and CI always passed it, so the gate never ran where the list was missing
-    # (REVIEW-2026-10.md, pile one, class (e)). An unknown flag is ignored, so an old invocation
-    # now simply runs every gate.
+    # --skip-slow is the only flag. An unknown flag is ignored, so a stale invocation still runs
+    # every gate; nothing turns a failing gate or a missing input into a printed SKIP.
     results = []
     skipped = []
     for name, fn, slow in GATES:

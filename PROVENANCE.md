@@ -11,15 +11,11 @@ lineage is explicit rather than implied.
   internal, Antaris-owned memory engine, then reduced to the lean open-core
   surface and folded into the `parsica_spirit` package as its engine subpackage.
   The port was intentional: this engine tier was always planned for open
-  release. Held product mechanisms were removed before the port. The closure
-  gate that verifies their absence (`tests/engine/test_closure.py`) ships and
-  runs, but the list of excluded module names is not in this repository. Since
-  October 2026 the closure tests and the release verifier
-  (`scripts/verify_release.py`) FAIL on a checkout that lacks the list, rather
-  than skip or pass over an empty set: a gate whose input is missing fails.
-  Committing the list or retiring the gate is the maintainer's open decision,
-  recorded in `REVIEW-2026-10.md`. The clean-room check independently proves
-  the base tier runs with every engine import blocked at runtime.
+  release. Held product mechanisms were removed before the port. A closure gate
+  once checked their absence against a list of module names that was never in
+  this repository; it was retired in October 2026, and `REVIEW-2026-10.md`
+  records the reason. The clean-room check independently proves the base tier
+  runs with every engine import blocked at runtime.
 - **The facade and the contracts leaf** (the top-level `parsica_spirit` modules
   and `src/parsica_spirit/enrich`): newly written for this release. An
   independent similarity audit against all prior internal code found no flagged
@@ -37,11 +33,12 @@ intentionally-opened runtime integration surfaces of the engine.
 ## Deliberately excluded
 
 The private upstream's advanced routing, team, calibration-tooling, document-ingest,
-server, and cloud layers remain private and are not part of this release. The
-closure-gate machinery that enforces their absence ships and runs; the excluded
-module names are not in the repository, so on a public checkout the closure tests
-and the release verifier fail by name until the list is committed or the gate is
-retired. Never a skip, never a silent empty pass.
+server, and cloud layers remain private and are not part of this release. None of
+those modules are present in this public tree. The closure-gate machinery that once
+checked for them against a list kept outside the repository was retired in October
+2026 (`REVIEW-2026-10.md`); the clean-room check still proves that the wheel carries
+only the `parsica_spirit` package and that the base tier runs with every engine import
+blocked.
 
 ## A note on versioning
 
