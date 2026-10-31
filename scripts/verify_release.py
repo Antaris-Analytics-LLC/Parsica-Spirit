@@ -10,18 +10,17 @@ Gates:
                        onto the child PYTHONPATH, so a bare checkout needs nothing installed)
   - import-closure   - import-linter zone contracts (.importlinter); fails closed if the
                        required config or the tool is absent
-  - closure-armed    - the closure-test exclusion sidecar must be present and non-empty in a repo
-                       checkout (fails closed; an unpacked public artifact reports a site-local
-                       skip instead). --skip-closure-armed omits it for public CI, where the
-                       sidecar never exists by design; the armed run is the release-side ritual
+  - closure-armed    - the closure-test exclusion list must be present and non-empty, in every
+                       checkout and every artifact; a gate whose input is missing FAILS (there is
+                       no flag that turns that into a skip; one existed until October 2026)
   - plain-ascii-docs - shipped .md docs carry no AI-tell glyphs (em/en dash, ellipsis, curly quotes,
                        bullet, arrows, box-art, emoji); fails on an empty discovery, never certifies nothing
   - clean-room       - one wheel, inventory closed, zero declared dependencies, base lifecycle
                        runs engine-dark, engine tier runs (scripts/cleanroom_check.py)
   - licensing        - Apache-2.0 LICENSE + NOTICE at the root, grant declared in pyproject
 
-Exit 0 iff every gate RUN passes. --skip-slow skips the slow gates while iterating;
---skip-closure-armed skips only the sidecar arming check (public CI use).
+Exit 0 iff every gate RUN passes. --skip-slow skips the slow gates while iterating and reports
+PARTIAL, never GREEN.
 """
 
 import os
@@ -83,26 +82,22 @@ def gate_import_closure():
 
 
 def gate_closure_armed():
-    """Fail closed if the import-closure exclusion gate would run UNARMED at release time.
+    """Fail closed if the import-closure exclusion gate would run without its input.
 
-    The exclusion vocabulary is a gitignored, site-local sidecar - the names are themselves a tell,
-    so they never ship, and the public closure tests SKIP VISIBLY without it. But a RELEASE must be
-    cut where the sidecar is present and non-empty, or the gate scanned nothing. So: in a repo
-    checkout a missing/empty sidecar is RED (never cut a release unarmed); in an unpacked public
-    artifact (no .git) the sidecar is legitimately absent by design, reported as a site-local skip
-    rather than a false alarm. Reports the COUNT only - never a name."""
+    The exclusion list lives in tests/engine/closure_excluded.local.txt. A release, a checkout and
+    an unpacked artifact are judged the same way: the list is present and non-empty, or this gate
+    is RED. Until October 2026 a tree with no .git directory passed here with the list absent, and
+    a command-line flag turned the absence into a skip (REVIEW-2026-10.md, pile one, class (e),
+    scripts/verify_release.py 101-105 and 243-260). Reports the COUNT only - never a name."""
     sidecar = os.path.join(ROOT, "tests", "engine", "closure_excluded.local.txt")
     if os.path.exists(sidecar):
         names = [ln.strip() for ln in open(sidecar, encoding="utf-8").read().splitlines()
                  if ln.strip() and not ln.strip().startswith("#")]
         if not names:
-            return False, "closure exclusion sidecar is empty - the gate would run UNARMED"
-        return True, "closure gate armed (%d excluded module(s); names withheld - site-local)" % len(names)
-    if os.path.isdir(os.path.join(ROOT, ".git")):
-        return False, ("closure exclusion sidecar absent in a repo checkout - the gate would run "
-                       "UNARMED; restore tests/engine/closure_excluded.local.txt "
-                       "before cutting a release")
-    return True, "closure vocabulary is site-local and not shipped (armed release-side; tests skip here)"
+            return False, "closure exclusion list is empty - the gate would scan nothing"
+        return True, "closure gate armed (%d excluded module(s); names withheld)" % len(names)
+    return False, ("closure exclusion list absent (tests/engine/closure_excluded.local.txt) - the gate "
+                   "cannot run, and a gate with no input fails; commit the list or retire the gate")
 
 
 def gate_cleanroom():
@@ -241,21 +236,15 @@ GATES = [
 
 def main():
     skip_slow = "--skip-slow" in sys.argv
-    skip_closure = "--skip-closure-armed" in sys.argv
+    # There is no flag that skips the closure-armed gate. Until October 2026 --skip-closure-armed
+    # did, and CI always passed it, so the gate never ran where the list was missing
+    # (REVIEW-2026-10.md, pile one, class (e)). An unknown flag is ignored, so an old invocation
+    # now simply runs every gate.
     results = []
     skipped = []
     for name, fn, slow in GATES:
         if slow and skip_slow:
             print("SKIP   %-15s (--skip-slow)" % name)
-            skipped.append(name)
-            continue
-        if name == "closure-armed" and skip_closure:
-            # public CI: the exclusion sidecar is site-local by design and never exists on a
-            # public runner, so the gate would be permanently red there for the wrong reason.
-            # The skip is explicit and printed; the DEFAULT stays fail-closed, and the armed
-            # run remains the release-side ritual.
-            print("SKIP   %-15s (--skip-closure-armed: sidecar is site-local, never on a "
-                  "public runner; armed run is release-side)" % name)
             skipped.append(name)
             continue
         print("RUN    %-15s ..." % name)

@@ -3,10 +3,11 @@ name: ci
 # Runs the release check (scripts/verify_release.py) on every push and PR, on Linux and Windows.
 # It does not publish anything.
 #
-# --skip-closure-armed: the closure-test exclusion sidecar is site-local by design (the excluded
-# module names are a tell and never ship), so it can never exist on a public runner - without the
-# skip, that one gate would be permanently red here for the wrong reason. CI gates on the other
-# five; the ARMED closure run is the release-side ritual, where the sidecar legitimately exists.
+# Every gate runs. Until October 2026 this step passed --skip-closure-armed, so the closure gate
+# (whose exclusion list is not in the repository) never ran here and the verifier's PARTIAL result
+# read as success (REVIEW-2026-10.md, pile one, class (e)). A gate whose input is missing fails;
+# this job is red until the exclusion list is committed or the gate is retired, and that red is
+# the honest state.
 
 on:
   push:
@@ -38,5 +39,5 @@ jobs:
           python -m pip install -e .
           python -m pip install pytest import-linter build
 
-      - name: Release verification (all buildable gates; closure-armed is release-side only)
-        run: python scripts/verify_release.py --skip-closure-armed
+      - name: Release verification (every gate; no skips)
+        run: python scripts/verify_release.py

@@ -13,13 +13,13 @@ lineage is explicit rather than implied.
   The port was intentional: this engine tier was always planned for open
   release. Held product mechanisms were removed before the port. The closure
   gate that verifies their absence (`tests/engine/test_closure.py`) ships and
-  runs, but the list of excluded module names is itself a tell, so it does not
-  ship: it lives in a site-local sidecar. On a public checkout the closure tests
-  therefore SKIP visibly ("gate not armed") rather than pass over an empty set;
-  the armed run happens release-side, where the sidecar is present, and the
-  release verifier (`scripts/verify_release.py`) fails closed if it is not. The
-  clean-room check independently proves the base tier runs with every engine
-  import blocked at runtime.
+  runs, but the list of excluded module names is not in this repository. Since
+  October 2026 the closure tests and the release verifier
+  (`scripts/verify_release.py`) FAIL on a checkout that lacks the list, rather
+  than skip or pass over an empty set: a gate whose input is missing fails.
+  Committing the list or retiring the gate is the maintainer's open decision,
+  recorded in `REVIEW-2026-10.md`. The clean-room check independently proves
+  the base tier runs with every engine import blocked at runtime.
 - **The facade and the contracts leaf** (the top-level `parsica_spirit` modules
   and `src/parsica_spirit/enrich`): newly written for this release. An
   independent similarity audit against all prior internal code found no flagged
@@ -39,9 +39,9 @@ intentionally-opened runtime integration surfaces of the engine.
 The private upstream's advanced routing, team, calibration-tooling, document-ingest,
 server, and cloud layers remain private and are not part of this release. The
 closure-gate machinery that enforces their absence ships and runs; the excluded
-module names do not (they are a tell), so the gate is armed release-side, where
-its site-local vocabulary lives, and the release verifier fails closed without it.
-A public checkout sees the tests skip visibly, never a silent empty pass.
+module names are not in the repository, so on a public checkout the closure tests
+and the release verifier fail by name until the list is committed or the gate is
+retired. Never a skip, never a silent empty pass.
 
 ## A note on versioning
 

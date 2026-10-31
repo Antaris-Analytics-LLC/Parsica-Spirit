@@ -547,8 +547,10 @@ never touches the engine), the closure tests with their closure-armed check (the
 exclusion manifest, armed release-side), a plain-ASCII check on the shipped docs, a
 clean-room wheel build in a fresh venv, and license checks.
 
-On a public git checkout the closure-armed gate reports red by design: the exclusion
-vocabulary is a site-local sidecar, armed release-side and never committed. See
+On a checkout that lacks `tests/engine/closure_excluded.local.txt` (every public checkout
+today), the closure tests and the closure-armed gate fail by name: a gate whose input is
+missing fails rather than passes or skips (since October 2026; see `REVIEW-2026-10.md`).
+Committing the list or retiring the gate is the maintainer's open decision. See
 `PROVENANCE.md`.
 
 ## Connecting Claude Code's own memory
@@ -658,8 +660,9 @@ the files are yours, and so is their deletion.
 
 The offline layer calibrator, adaptive quality routing, multi-agent team memory,
 document-ingest parsers, the MCP server, cloud backends, and cross-format import stay
-upstream. The exclusion manifest is a maintainer-local, gitignored file; the closure tests
-(`test_closure.py`, armed release-side) enforce it at release time. None of the excluded modules are present in this public tree.
+upstream. The exclusion manifest is not in this repository; the closure tests
+(`test_closure.py`) fail on a checkout that lacks it until it is committed or the gate is
+retired. None of the excluded modules are present in this public tree.
 
 No data files ship at all. The substrate and every expansion index arrive empty
 on purpose: they accumulate **your** corpus.
