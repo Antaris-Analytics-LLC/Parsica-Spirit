@@ -25,31 +25,38 @@ import parsica_spirit.engine
 
 PKG = pathlib.Path(parsica_spirit.engine.__file__).parent
 
-# Module names the build must never ship or hard-import. Kept as DATA in a gitignored, site-local
-# sidecar (one name per line; blank lines and # comments ignored) so this public file enumerates
-# none of them (the names are themselves a tell) and a build re-sync is checked automatically.
+# Module names the build must never ship or hard-import. Kept as DATA in a sidecar file (one name
+# per line; blank lines and # comments ignored) so this public file enumerates none of them and a
+# build re-sync is checked automatically.
 #
-# The exclusion vocabulary ships with NObody: the sidecar is gitignored, so a public checkout has
-# no names to run against. Rather than pass VACUOUSLY on an empty set (green while scanning nothing,
-# which GPT's review rightly flagged), every test in this module SKIPS VISIBLY when the sidecar is
-# absent - the gate is honestly reported "not armed" instead of silently satisfied. The armed run
-# happens release-side, where the sidecar is present (and verify_release.py fails closed if it is
-# not), so a real breach is still caught before anything ships.
+# A gate whose input is missing FAILS. It does not pass, and it does not skip. Until October 2026
+# every test in this module skipped when the sidecar was absent, and the sidecar was kept out of
+# the repository, so on a public checkout this gate never ran at all (REVIEW-2026-10.md, pile one,
+# class (e), tests/engine/test_closure.py 28-52). The file name is unchanged. Whether the list is
+# committed or the gate is retired is the maintainer's decision, recorded in REVIEW-2026-10.md;
+# until one of the two happens these tests fail on every checkout that lacks the list, which is the
+# honest state.
 def _load_excluded():
     sidecar = pathlib.Path(__file__).with_name("closure_excluded.local.txt")
     if not sidecar.exists():
-        return set()
+        return None
     return {ln.strip() for ln in sidecar.read_text(encoding="utf-8").splitlines()
             if ln.strip() and not ln.strip().startswith("#")}
 
 
 EXCLUDED = _load_excluded()
 
-# Skip VISIBLY (never pass vacuously) when the site-local exclusion sidecar is absent.
-pytestmark = pytest.mark.skipif(
-    not EXCLUDED,
-    reason="exclusion sidecar absent - closure gate not armed (armed release-side, where the "
-           "sidecar is present; verify_release.py fails closed without it)")
+
+def _gate_input_present():
+    """Every test in this module calls this first. Absent or empty list -> the test FAILS, by name
+    (a plain call, not a fixture, so pytest reports a failure rather than a setup error)."""
+    if EXCLUDED is None:
+        pytest.fail("closure exclusion list absent: tests/engine/closure_excluded.local.txt is not in "
+                    "this checkout, so the import-closure gate cannot run. A gate with no input fails; "
+                    "it does not pass. Commit the list or retire the gate (see REVIEW-2026-10.md).")
+    if not EXCLUDED:
+        pytest.fail("closure exclusion list is empty: the import-closure gate would scan nothing. "
+                    "A gate with no input fails; it does not pass.")
 
 _CATCHES = {"ImportError", "ModuleNotFoundError", "Exception"}
 
@@ -124,6 +131,7 @@ def test_excluded_imports_are_allowlisted_and_guarded():
     excluded module would still import green and run silently degraded. So an excluded reference
     must be enumerated here (intentional, deferred) AND genuinely guarded; anything else fails.
     """
+    _gate_input_present()
     violations = []
     for py in _all_py():
         tree = ast.parse(py.read_text(encoding="utf-8"))
@@ -143,11 +151,13 @@ def test_excluded_imports_are_allowlisted_and_guarded():
 
 
 def test_excluded_modules_are_physically_absent():
+    _gate_input_present()
     present = sorted(p.name for p in _all_py() if p.stem in EXCLUDED)
     assert not present, "excluded module files shipped in the build: %s" % present
 
 
 def test_public_surface_references_no_excluded_module():
+    _gate_input_present()
     tree = ast.parse((PKG / "__init__.py").read_text(encoding="utf-8"))
     bad = ["line %d: %s" % (n.lineno, _excluded_ref(n)) for n in ast.walk(tree)
            if isinstance(n, (ast.Import, ast.ImportFrom)) and _excluded_ref(n)]
@@ -159,6 +169,7 @@ def test_no_unvettable_or_excluded_dynamic_import():
     literal must not name an excluded module. A non-literal argument (concat / f-string) cannot be
     vetted for closure, so it fails too - forcing dynamic dispatch to stay statically checkable.
     Resolves `from importlib import import_module [as x]` aliases as well as the attribute form."""
+    _gate_input_present()
     bad = []
     for py in _all_py():
         tree = ast.parse(py.read_text(encoding="utf-8"))
