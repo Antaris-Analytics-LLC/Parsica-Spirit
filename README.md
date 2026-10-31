@@ -1,5 +1,9 @@
 # Parsica Spirit
 
+## Status, 30 October 2026
+
+During a recent review, flaws in this code were found to have been introduced during the builds, and fixes are being rolled out now. What was found, what is fixed and what remains is in REVIEW-2026-10.md. Both this repository and its sibling will be retired soon. Their successor, Continuum, combines the best of both into a single plugin; when it is released, Spirit and Weave will be retired and archived.
+
 An open-source, open-core port of the Parsica memory engine: persistent, deterministic,
 audit-friendly memory for AI agents, with a lightweight Claude Code adapter.
 
@@ -121,6 +125,8 @@ One install, one package - the engine and the contracts leaf are subpackages ins
 `parsica_spirit`, not separate distributions, so there is nothing else to choose or add.
 The base tier never imports the engine (CI-enforced); escalation is explicit, by injecting
 an engine backend (below), so you always know which tier you are running.
+
+Until the pile-one pull requests listed in REVIEW-2026-10.md merge, treat the scrub as best effort and keep sensitive material out.
 
 ## How to use it
 
